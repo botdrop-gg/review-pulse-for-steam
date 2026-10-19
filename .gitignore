@@ -1,0 +1,5 @@
+.env
+review_pulse_state.json
+*.tmp
+__pycache__/
+.qa-chan.json
