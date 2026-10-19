@@ -2,8 +2,7 @@
 
 A tiny self-hosted script that watches **one Steam game** and posts every **new** Steam review to a Discord channel. Use a private dev channel so you see feedback as it lands, without refreshing your store page.
 
-<!-- SCREENSHOT PLACEHOLDER: add docs/screenshot.png (Discord channel with 3 posted reviews) and replace this comment with:
-![Review Pulse posting new Steam reviews to a Discord channel](docs/screenshot.png) -->
+![Review Pulse posting three new Steam reviews to a Discord channel](docs/screenshot.png)
 
 Free, MIT-licensed, one Python file, **no dependencies** (standard library only), **no API keys** (it uses Steam's public review endpoint).
 
