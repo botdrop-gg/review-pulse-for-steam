@@ -4,7 +4,7 @@ A tiny self-hosted script that watches **one Steam game** and posts every **new*
 
 ![Review Pulse posting three new Steam reviews to a Discord channel](docs/screenshot.png)
 
-Free, MIT-licensed, one Python file, **no dependencies** (standard library only), **no API keys** (it uses Steam's public review endpoint).
+Free, MIT-licensed, one Python file, **no dependencies** (standard library only), **no API keys** (it uses Steam's public review API, `IUserReviewsService/GetAppReviews`).
 
 Each post shows:
 - 👍 Recommended or 👎 Not recommended (green or red)
@@ -55,20 +55,25 @@ docker run -d --restart unless-stopped --env-file .env -v $PWD/data:/data review
 ```
 
 ## Good to know
-- Totals cover **all languages and all purchase types** (`language=all`, `purchase_type=all`). Your store page's headline number may differ slightly, because Steam's default store view can filter by purchase type and language.
+- Totals cover **all languages and all purchase types** (`languages: ["all"]`, `purchase_type: 1`). Your store page's headline number may differ slightly, because Steam's default store view can filter by purchase type and language.
 - Steam's review list can lag. In our test, one response was about an hour behind, so a later check posted a burst of reviews that were real and new, not repeats. It's built for indie-sized review volume. A huge game will hit the per-check cap often.
 - Each check reads up to 300 of the newest reviews. If your game gets more than that between checks, check more often.
-- Steam's review endpoint is public but undocumented. Valve can change or limit it at any time. Keep checks to every few minutes or more.
+- Steam's review API is public and needs no key, but Valve can change or limit it at any time (it retired the old `store.steampowered.com/appreviews` address on Oct 22, 2026). Keep checks to every few minutes or more.
 
 ## Tests
 ```bash
 python -m unittest -v test_review_pulse
 ```
-10 unit tests cover formatting, first-run baseline, no duplicates, failed posts being retried, 429 retry, mention safety, batching and the per-run cap.
+12 unit tests cover formatting, first-run baseline, no duplicates, failed posts being retried, 429 retry, mention safety, batching, the per-run cap, the Steam review API request and a clear error for an unknown app ID.
 
-**QA status (Oct 19, 2026):**
-- **Tested live:** posting to a real Discord channel for a game with active reviews, using the one-shot and loop modes. A second run posted no duplicates, and the footer totals matched Steam's API.
+**QA status:**
+- **Tested live (Oct 19, 2026, 1.0.0):** posting to a real Discord channel for a game with active reviews, using the one-shot and loop modes. A second run posted no duplicates, and the footer totals matched Steam's API.
+- **Re-tested live (Oct 25, 2026, 1.0.1):** with the new Steam review API, a one-shot check posted 3 new reviews of a real game to a test Discord channel, and a second run posted no duplicates.
 - **Not tested yet:** the Dockerfile. It wasn't built in QA (no Docker on the test machine). Windows hasn't been tested either. It's plain Python, so it should run, but it hasn't been run there.
+
+## Changelog
+- **Oct 25, 2026 (1.0.1):** Steam retired its old review address (`store.steampowered.com/appreviews`) on Oct 22, 2026, so every check failed. Review Pulse now reads reviews from Steam's `IUserReviewsService/GetAppReviews` API. An unknown app ID now gives a clear error. Settings and the state file are unchanged; just update `review_pulse.py`.
+- **Oct 19, 2026 (1.0.0):** First release.
 
 ## License
 MIT, see `LICENSE`. Not affiliated with Valve or Discord. Steam is a trademark of Valve Corporation.

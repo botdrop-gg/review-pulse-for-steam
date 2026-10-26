@@ -8,13 +8,15 @@ def rev(i, ts, up=True, text="Great game", pt=120, lang="english"):
 SUMM = {"total_reviews": 200, "total_positive": 180, "total_negative": 20, "review_score_desc": "Very Positive"}
 
 class FakeSteam:
-    def __init__(self, reviews, summ=SUMM): self.reviews, self.summ = reviews, summ
+    """Mimics IUserReviewsService/GetAppReviews: {"response": {query_summary, reviews, cursor}}."""
+    def __init__(self, reviews, summ=SUMM): self.reviews, self.summ, self.queries = reviews, summ, []
     def __call__(self, url, params=None, data=None, timeout=20):
         if "appdetails" in url: return 200, {params["appids"]: {"data": {"name": "Test Game"}}}, {}
-        if params.get("num_per_page") == 0: return 200, {"success": 1, "query_summary": self.summ}, {}
-        if params.get("cursor") != "*": return 200, {"success": 1, "reviews": [], "cursor": params["cursor"]}, {}
-        newest = sorted(self.reviews, key=lambda r: -r["timestamp_created"])
-        return 200, {"success": 1, "reviews": newest, "cursor": "next"}, {}
+        assert url == rp.REVIEWS_API, url
+        q = json.loads(params["input_json"]); self.queries.append(q)
+        if q["cursor"] != "*": return 200, {"response": {"query_summary": self.summ, "reviews": [], "cursor": q["cursor"]}}, {}
+        newest = sorted(self.reviews, key=lambda r: -r["timestamp_created"])[: q["num_per_page"]]
+        return 200, {"response": {"query_summary": self.summ, "reviews": newest, "cursor": "next"}}, {}
 
 class FakeDiscord:
     def __init__(self, codes=None): self.codes, self.calls = list(codes or []), []
@@ -78,5 +80,22 @@ class T(unittest.TestCase):
         steam = FakeSteam([rev(i, 1000 + i) for i in range(3)])
         rp.run_once(dict(self.cfg, hook=""), get=steam, send=FakeDiscord())
         self.assertEqual(json.load(open(self.state))["seen"], [])
+
+    def test_uses_new_steam_reviews_api(self):
+        # Steam retired store.steampowered.com/appreviews on Oct 22, 2026; reviews now come from IUserReviewsService.
+        self.assertEqual(rp.REVIEWS_API, "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/")
+        steam = FakeSteam([rev(i, 1000 + i) for i in range(3)])
+        self.assertEqual(rp.fetch_summary("620", get=steam), SUMM)
+        self.assertEqual(len(rp.fetch_recent("620", 3, get=steam)), 3)
+        for q in steam.queries:
+            self.assertEqual((q["appid"], q["filter"], q["languages"], q["purchase_type"]), (620, 1, ["all"], 1))
+        self.assertEqual([q["cursor"] for q in steam.queries[1:]], ["*", "next"])
+
+    def test_old_endpoint_redirect_or_unknown_app_gives_clear_error(self):
+        # the old address now answers with the store home page (HTML), parsed as no JSON
+        with self.assertRaisesRegex(RuntimeError, "HTTP 200"):
+            rp.fetch_summary("620", get=lambda *a, **k: (200, None, {}))
+        with self.assertRaisesRegex(RuntimeError, "No Steam game found with app id 999999999"):
+            rp.fetch_summary("999999999", get=lambda *a, **k: (200, {"response": {}}, {}))
 
 if __name__ == "__main__": unittest.main()

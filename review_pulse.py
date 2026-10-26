@@ -11,7 +11,7 @@ STEAM_APP_ID, DISCORD_WEBHOOK_URL, CHECK_EVERY_MINUTES, STATE_FILE, FIRST_RUN_PO
 """
 import argparse, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 UA = {"User-Agent": "review-pulse/" + __version__}
 STEAM = "https://store.steampowered.com"
 GREEN, RED = 0x2ECC71, 0xE74C3C
@@ -54,23 +54,36 @@ def http_json(url, params=None, data=None, timeout=20):
 
 
 # ---------- Steam ----------
+# Steam retired store.steampowered.com/appreviews on Oct 22, 2026 (it now redirects to the store home page).
+# Reviews come from the public IUserReviewsService/GetAppReviews Web API instead (no key needed).
+REVIEWS_API = "https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/"
+
+
+def reviews_page(appid, cursor="*", num=100, get=http_json):
+    """One page of newest-first reviews plus Steam's query_summary, all languages and all purchase types
+    (filter 1 = recent, purchase_type 1 = all, languages ["all"])."""
+    q = {"appid": int(appid), "filter": 1, "languages": ["all"], "purchase_type": 1,
+         "num_per_page": num, "cursor": cursor}
+    st, j, _ = get(REVIEWS_API, {"input_json": json.dumps(q)})
+    if st != 200 or not isinstance(j, dict) or not isinstance(j.get("response"), dict):
+        raise RuntimeError(f"Steam reviews request failed (HTTP {st})")
+    return j["response"]
+
+
 def fetch_summary(appid, get=http_json):
-    """Steam's own query_summary for all languages and purchase types (num_per_page=0 returns only the summary)."""
-    st, j, _ = get(f"{STEAM}/appreviews/{appid}", dict(json=1, language="all", purchase_type="all",
-                                                     num_per_page=0, filter="all"))
-    if st != 200 or not j or j.get("success") != 1:
-        raise RuntimeError(f"Steam review summary request failed (HTTP {st})")
-    return j.get("query_summary", {})
+    """Steam's own query_summary for all languages and purchase types."""
+    s = reviews_page(appid, num=1, get=get).get("query_summary")
+    if not s:                                   # Steam answers an empty response for app ids that don't exist
+        raise RuntimeError(f"No Steam game found with app id {appid}. "
+                           "Check the number in the store link (store.steampowered.com/app/<number>/).")
+    return s
 
 
 def fetch_recent(appid, pages=3, get=http_json):
-    """Newest reviews first (filter=recent), up to pages x 100."""
+    """Newest reviews first, up to pages x 100."""
     out, cursor = [], "*"
     for _ in range(pages):
-        st, j, _ = get(f"{STEAM}/appreviews/{appid}", dict(json=1, filter="recent", language="all",
-                                                         purchase_type="all", num_per_page=100, cursor=cursor))
-        if st != 200 or not j or j.get("success") != 1:
-            raise RuntimeError(f"Steam reviews request failed (HTTP {st})")
+        j = reviews_page(appid, cursor, 100, get)
         batch = j.get("reviews", [])
         out += batch
         nxt = j.get("cursor")
